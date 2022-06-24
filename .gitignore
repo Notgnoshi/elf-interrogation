@@ -1,3 +1,9 @@
+# Binary names
+examples/empty/empty
+examples/global/global
+examples/greet/greet
+examples/heap/heap
+
 # Prerequisites
 *.d
 
