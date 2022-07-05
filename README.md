@@ -57,8 +57,8 @@ needed to cover it all.
 Thus, despite my preference to build understanding from the bottom up in the general case, I think
 it makes most sense to ask (and answer) specific questions in this particular case.
 
-* TODO - What's an ELF file?
-* TODO - How are processes loaded into memory?
+* [What's an ELF file?](./whats-an-elf-file.md)
+* [How are processes loaded into memory?](./how-are-processes-loaded-into-memory.md)
 * TODO - What is the compilation process?
 
   for traditional Linux GCC / LLVM builds and ARM Keil builds (I bet they're remarkably similar, but
