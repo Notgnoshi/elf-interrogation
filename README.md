@@ -105,3 +105,19 @@ it makes most sense to ask (and answer) specific questions in this particular ca
 
   Compiling an empty binary that returns 0 is several megabytes, despite there being _nothing_ to
   statically link...
+
+## Resources
+* https://en.wikipedia.org/wiki/Executable_and_Linkable_Format
+* https://refspecs.linuxbase.org/elf/elf.pdf
+* https://fasterthanli.me/series/making-our-own-executable-packer/part-1
+* https://fasterthanli.me/articles/a-dynamic-linker-murder-mystery
+* https://www.uclibc.org/docs/elf-64-gen.pdf
+* https://github.com/corkami/pics/tree/master/binary/elf101
+* https://jvns.ca/blog/2014/09/06/how-to-read-an-executable/
+* http://www.bottomupcs.com/chapter07.xhtml
+* https://danluu.com/edit-binary/
+* https://lwn.net/Articles/276782/
+* https://akkadia.org/drepper/dsohowto.pdf
+* https://www.youtube.com/watch?v=dOfucXtyEsU
+* https://lock.cmpxchg8b.com/linux123.html
+* http://www.muppetlabs.com/~breadbox/software/tiny/teensy.html
