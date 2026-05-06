@@ -1,32 +1,33 @@
 # What's an ELF file?
+
 And how do I peek under the hood?
 
 # Contents
 
-- [What's an ELF file?](#whats-an-elf-file)
-- [Introduction](#introduction)
-- [An example](#an-example)
-    - [Compilation pipeline refresher](#compilation-pipeline-refresher)
-- [ELF overview](#elf-overview)
-    - [File header](#file-header)
-    - [Section headers](#section-headers)
-    - [Sections](#sections)
-    - [Program headers and segments](#program-headers-and-segments)
-- [And now welcome to the segment I like to call "What could possibly go wrong?"](#and-now-welcome-to-the-segment-i-like-to-call-what-could-possibly-go-wrong)
-    - [String table](#string-table)
-    - [Symbol table](#symbol-table)
-    - [Stripping](#stripping)
-    - [Code](#code)
-    - [Data](#data)
-        - [Static constants](#static-constants)
-        - [Local constants](#local-constants)
-        - [Globals / static locals](#globals-static-locals)
-    - [Relocations](#relocations)
-    - [Dynamic symbols](#dynamic-symbols)
-    - [DT_RPATH and DT_BIND_NOW?](#dt_rpath-and-dt_bind_now)
-    - [Metadata](#metadata)
-    - [Debug symbols](#debug-symbols)
-    - [How to customize sections with GCC?](#how-to-customize-sections-with-gcc)
+* [What's an ELF file?](#whats-an-elf-file)
+* [Introduction](#introduction)
+* [An example](#an-example)
+  * [Compilation pipeline refresher](#compilation-pipeline-refresher)
+* [ELF overview](#elf-overview)
+  * [File header](#file-header)
+  * [Section headers](#section-headers)
+  * [Sections](#sections)
+  * [Program headers and segments](#program-headers-and-segments)
+* [And now welcome to the segment I like to call "What could possibly go wrong?"](#and-now-welcome-to-the-segment-i-like-to-call-what-could-possibly-go-wrong)
+  * [String table](#string-table)
+  * [Symbol table](#symbol-table)
+  * [Stripping](#stripping)
+  * [Code](#code)
+  * [Data](#data)
+    * [Static constants](#static-constants)
+    * [Local constants](#local-constants)
+    * [Globals / static locals](#globals-static-locals)
+  * [Relocations](#relocations)
+  * [Dynamic symbols](#dynamic-symbols)
+  * [DT_RPATH and DT_BIND_NOW?](#dt_rpath-and-dt_bind_now)
+  * [Metadata](#metadata)
+  * [Debug symbols](#debug-symbols)
+  * [How to customize sections with GCC?](#how-to-customize-sections-with-gcc)
 
 # Introduction
 
@@ -49,42 +50,58 @@ int main() { return 0; }
 
 ## Compilation pipeline refresher
 
+Normally, when we compile a C++ file, we do so by producing object files in a single step, and then
+linking them all together at the end.
+
+```sh
+g++ file1.cpp -c -o file1.o
+g++ file2.cpp -c -o file2.o
+g++ file1.o file2.o -o myapp
+```
+
+but `g++` internally is "just" a driver that performs a number of steps in order. Here's simplified
+versions of those steps:
+
 1. Preprocess
    ```sh
    cpp empty.cpp -o empty-preprocessed.cpp
    # equivalently
-   g++ -E empty.cppp -o empty-preprocessed.cpp
+   g++ -E empty.cpp -o empty-preprocessed.cpp
+   vim empty-preprocessed.cpp
    ```
 2. Compile
    ```sh
    g++ -S empty-preprocessed.cpp -o empty.S
+   vim empty.S
    ```
 3. Assemble
    ```sh
    as -c empty.S -o empty.o
    # equivalently
    g++ -c empty.S -o empty.o
+   xxd empty.o | less
+   file empty.o
    ```
 4. Link
-    1. For normal people:
-       ```sh
-       g++ empty.o -o empty
-       ```
-    2. But if you enable verbose output:
-       ```sh
-       g++ -v empty.o -o empty
-       ```
-       you see that under the hood, `g++` invokes `ld` with a default set of arguments that are
-       _very_ specific to your particular toolchain:
-       ```sh
-       ld -dynamic-linker /lib64/ld-linux-x86-64.so.2 \
-           -o empty \
-           -L/usr/lib/gcc/x86_64-linux-gnu/11 -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/11/../../.. \
-           /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/11/crtbeginS.o \
-           empty.o \
-           -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc \
-           /usr/lib/gcc/x86_64-linux-gnu/11/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crtn.o
-       ```
+   1. For normal people:
+      ```sh
+      g++ empty.o -o empty
+      ```
+   2. But if you enable verbose output:
+      ```sh
+      g++ -v empty.o -o empty
+      ```
+      you see that under the hood, `g++` invokes `ld` with a default set of arguments that are
+      _very_ specific to your particular toolchain:
+      ```sh
+      ld -dynamic-linker /lib64/ld-linux-x86-64.so.2 \
+          -o empty \
+          -L/usr/lib/gcc/x86_64-linux-gnu/11 -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/11/../../.. \
+          /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/11/crtbeginS.o \
+          empty.o \
+          -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc \
+          /usr/lib/gcc/x86_64-linux-gnu/11/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crtn.o
+      ```
 
 ```sh
 $ file empty.o empty
@@ -258,8 +275,8 @@ Section Headers:
 
 ## Program headers and segments
 
-The **Program Header** defines what **Segments** get loaded into memory.
-Object files don't have segments, because they don't define how something gets loaded into memory.
+The **Program Header** defines what **Segments** get loaded into memory. Object files don't have
+segments, because they don't define how something gets loaded into memory.
 
 ```sh
 $ readelf --segments empty.o
@@ -369,8 +386,8 @@ bit if information on what's loaded into those regions.
 +--------------+ 0x7ffffffff000
 ```
 
-For more information, take a peek at [How are processes loaded into
-memory?](./how-are-processes-loaded-into-memory.md).
+For more information, take a peek at
+[How are processes loaded into memory?](./how-are-processes-loaded-into-memory.md).
 
 # And now welcome to the segment I like to call "What could possibly go wrong?"
 
@@ -493,8 +510,8 @@ String dump of section '.strtab':
 ```
 
 Okay, now we're getting somewhere, this actually looks like a table! Comparing to the hexdump above,
-we see that it starts with a NULL byte, and then contains a null-terminated string: `677265 65742e63 707000`.
-This is the ASCII text `greet.cpp`.
+we see that it starts with a NULL byte, and then contains a null-terminated string:
+`677265 65742e63 707000`. This is the ASCII text `greet.cpp`.
 
 Cool. So this is a bunch of null-terminated strings concatenated together. Presumably, other
 sections refer to the string table using an index.
@@ -529,7 +546,7 @@ Hex dump of section '.symtab':
 Well. That's even less useful than the hexdump of `.strtab`, which at least included data that we
 could make sense of.
 
-If we reach for a more powerful tool,
+If we reach for a more powerful tool to parse the symbol table, we get something more useful:
 
 ```sh
 $ readelf --wide --symbols greet.o
@@ -546,68 +563,15 @@ Symbol table '.symtab' contains 10 entries:
      8: 0000000000000000     0 NOTYPE  GLOBAL DEFAULT  UND write
      9: 0000000000000023    15 FUNC    GLOBAL DEFAULT    1 main
 ```
-we see that it presumably holds some strings, but those strings aren't in the symbol table! That's
-because they're in the string table, where strings belong ;)
 
-If we look at the symbol table definition in [elf(5)](https://linux.die.net/man/5/elf), we find (for
-64-bit ELF files)
-```c
-typedef struct {
-    uint32_t      st_name;
-    unsigned char st_info;
-    unsigned char st_other;
-    uint16_t      st_shndx;
-    Elf64_Addr    st_value;
-    uint64_t      st_size;
-} Elf64_Sym;
-```
-that each symbol entry is 24 bytes, and that `st_name` is an index into the `.strtab` table (for
-regular symbols. For sections, it's an index into the `.shstrtab` table). Let's verify.
+we see that it presumably holds some strings, but those strings aren't in the symbol table (we
+looked at the symbol table just a bit ago)! That's because they're in the string table, where
+strings belong ;)
 
-The first symbol, is all NULL-padding.
-```sh
-   Num:    Value          Size Type    Bind   Vis      Ndx Name
-     0: 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND
-```
-So let's look at the second symbol:
-```sh
-   Num:    Value          Size Type    Bind   Vis      Ndx Name
-     1: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS greet.cpp
-```
-That's going to be nearabouts
-```sh
-  0x00000000 00000000 00000000 00000000 00000000 ................
-  0x00000010 00000000 00000000 01000000 0400f1ff ................
-  0x00000020 00000000 00000000 00000000 00000000 ................
-```
-Let's narrow it down using the fact that `Elf64_Sym` is 24 bytes. Each grouping is four bytes, so
-the first symbol is the first size groups of NULL bytes:
-```sh
-  0x00000000 00000000 00000000 00000000 00000000 ................
-  0x00000010 00000000 00000000                   ........
-```
-and the second symbol is the next 6 groups:
-```sh
-  0x00000010                   01000000 0400f1ff         ........
-  0x00000020 00000000 00000000 00000000 00000000 ................
-```
-And sure enough, the first 32 bits of the symbol (the `st_name`) is `0x01`, or rather, the second
-string in the string table:
+Readelf was helpful enough to parse the symbol and strings tables and give us something more
+meaningful.
 
-```sh
-$ readelf --string-dump=.strtab greet.o
-String dump of section '.strtab':
-  [     1]  greet.cpp
-  [     b]  _ZZ5greetvE8greeting
-  [    20]  _ZZ5greetvE15greeting_length
-  [    3d]  _Z5greetv
-  [    47]  write
-  [    4d]  main
-```
-(remember the first string is a single NULL byte, and that the numbers in the square brackets are
-indices).
-
-So now what is this  `_ZZ5greetvE15greeting_length` nonsense? It turns out that C++ (and other)
+So now what is this `_ZZ5greetvE15greeting_length` nonsense? It turns out that C++ (and other)
 compilers **Mangle** symbol names. The compilers do this so that symbol names (think of overloaded
 functions, and variable names!) are unique (to facilitate linking, which we're not going to talk
 about).
@@ -647,10 +611,20 @@ $ nm --demangle greet.o
 0000000000000000 d greet()::greeting
 ```
 
+I've used this before to diagnose missing symbols by identifying _which library_ provides a symbol:
+
+```sh
+cd /opt/poky/sysroots/cortexa72-cortexa53-crypto-poky-linux/usr/lib
+find . -name 'libQt*.so*' -exec sh -c 'nm -D --defined-only {} 2>/dev/null | grep _ZNK11QQmlPrivate18AOTCompiledContext9setLocalsEPKNS_23AOTTrackedLocalsStorageE && echo {} ' \;
+```
+
+**Listing the symbols in an ELF file is a powerful tool for debugging!**
+
 ## Stripping
 
-Notice from above that we did _not_ build the `./greet` example with debug symbols.
-Using [file(1)](https://linux.die.net/man/1/file) confirms this:
+Notice from above that we did _not_ build the `./greet` example with debug symbols. Using
+[file(1)](https://linux.die.net/man/1/file) confirms this:
+
 ```sh
 $ file greet.o greet
 greet.o: ELF 64-bit LSB relocatable, x86-64, version 1 (SYSV), not stripped
@@ -661,6 +635,7 @@ But it _does_ say that the ELF files are **not stripped**. Let's use
 [strip(1)](https://linux.die.net/man/1/strip) to _strip_ the unneeded symbols, and see what happens.
 
 Before:
+
 ```sh
 $ readelf --demangle --wide --symbols greet
 
@@ -718,6 +693,7 @@ Symbol table '.symtab' contains 39 entries:
 ```
 
 After:
+
 ```sh
 $ wc -c greet
 16096 greet
@@ -736,8 +712,8 @@ $ wc -c greet
 14472 greet
 ```
 
-That pruned almost 2KB off of the executable.
-And now `file` tells us it's stripped:
+That pruned almost 2KB off of the executable. And now `file` tells us it's stripped:
+
 ```sh
 $ file greet
 greet: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=5d2078ddcc7d7cd4770bb5c7a833c02f83f6dbf4, for GNU/Linux 3.2.0, stripped
@@ -805,7 +781,9 @@ Disassembly of section .text:
 ## Data
 
 ### Static constants
+
 If we refer back to our example,
+
 ```cpp
 #include <unistd.h>
 
@@ -820,6 +798,7 @@ int main() {
     return greet();
 }
 ```
+
 the `greet()::greeting` symbol is a static string constant. Based on my experience, I'd expect this
 to be in the `.rodata` (read only data) section, which gets loaded to a read-only memory page.
 
@@ -836,8 +815,9 @@ Hex dump of section '.rodata':
 So the string `Hello world\n` is stored at address `0x2008`.
 
 But in the disassembly above, `objdump` claims that the symbol lives at `0x4010`?! What's going on?
+
 ```sh
-    1151:	48 8b 05 b8 2e 00 00 	mov    rax,QWORD PTR [rip+0x2eb8]    # 0x4010 <greet()::greeting>
+1151:	48 8b 05 b8 2e 00 00 	mov    rax,QWORD PTR [rip+0x2eb8]    # 0x4010 <greet()::greeting>
 ```
 
 (disclaimer: I don't speak assembly, and I _definitely_ don't speak Intel style x86_64 assembly, so
@@ -878,9 +858,11 @@ $1 = (void (*)(void)) 0x555555555151 <greet()+8>
 This shows that the instruction pointer is pointing to the `0x1151` instruction (remember that the
 addresses in the ELF files are relative to the base address, which in this case is
 `0x555555554000`), or rather, the
+
 ```asm
 mov     rax,QWORD PTR [rip+0x2eb8]      # 0x4010 <greet()::greeting>
 ```
+
 instruction.
 
 So let's do the math, and then step to the next instruction and double check.
@@ -909,8 +891,8 @@ Exec file: `/home/nots/Documents/elf-interrogation/examples/greet/greet', file t
  [24]     0x555555558000->0x555555558018 at 0x00003000: .data ALLOC LOAD DATA HAS_CONTENTS
 ```
 
-Yup. `0x555555558010` is in the `.data` section range.
-And it's also the expected value too; if we look at what's there, we'll find another pointer:
+Yup. `0x555555558010` is in the `.data` section range. And it's also the expected value too; if we
+look at what's there, we'll find another pointer:
 
 ```sh
 (gdb) print/x *(intptr_t*) ($rip + 0x2eb8 + 0x07)
@@ -940,13 +922,20 @@ $5 = 0x555555556008
 Cool. Learning how static constants work was fun.
 
 ### Local constants
+
 ### Globals / static locals
+
 ## Relocations
+
 ## Dynamic symbols
+
 ## DT_RPATH and DT_BIND_NOW?
+
 ## Metadata
+
 How do kernel modules add metadata for author, etc.?
 http://www.bottomupcs.com/elf-sections-others.xhtml
+
 ## Debug symbols
 
 ```sh
@@ -963,6 +952,7 @@ greet:	file format elf64-x86-64
 ```
 
 If you use `readelf`, this looks like
+
 ```sh
 $ readelf --debug-dump=info ./greet
 ...
@@ -975,4 +965,5 @@ $ readelf --debug-dump=info ./greet
     <115>   DW_AT_location    : 9 byte block: 3 10 40 0 0 0 0 0 0 	(DW_OP_addr: 4010)
 ...
 ```
+
 ## How to customize sections with GCC?

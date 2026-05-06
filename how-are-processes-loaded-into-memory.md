@@ -2,12 +2,12 @@
 
 # Contents
 
-- [How are Linux processes loaded into memory?](#how-are-linux-processes-loaded-into-memory)
-- [Program headers and segments](#program-headers-and-segments)
-- [The stack](#the-stack)
-- [The heap](#the-heap)
-- [ASLR](#aslr)
-- [Summary](#summary)
+* [How are Linux processes loaded into memory?](#how-are-linux-processes-loaded-into-memory)
+* [Program headers and segments](#program-headers-and-segments)
+* [The stack](#the-stack)
+* [The heap](#the-heap)
+* [ASLR](#aslr)
+* [Summary](#summary)
 
 # Program headers and segments
 
@@ -63,7 +63,6 @@ $ gdb --quiet -ex "break main" -ex "run" empty
 In another terminal (so we can keep the process running) let's poke and prod at PID `230427`
 
 ```sh
-
 $ cat /proc/230427/maps
 555555554000-555555555000 r--p 00000000 103:05 21891083                  /home/nots/Documents/elf-interrogation/examples/empty/empty
 555555555000-555555556000 r-xp 00001000 103:05 21891083                  /home/nots/Documents/elf-interrogation/examples/empty/empty
@@ -89,8 +88,8 @@ $ cat /proc/230427/maps
 ffffffffff600000-ffffffffff601000 --xp 00000000 00:00 0                  [vsyscall]
 ```
 
-This data comes from the [proc(5)](https://linux.die.net/man/5/proc) virtual filesystem provided by the Linux kernel. GDB
-also provides its own view for this data:
+This data comes from the [proc(5)](https://linux.die.net/man/5/proc) virtual filesystem provided by
+the Linux kernel. GDB also provides its own view for this data:
 
 ```sh
 (gdb) info proc mappings
@@ -181,7 +180,9 @@ Stack level 0, frame at 0x7fffffffdef0:
  Saved registers:
   rbp at 0x7fffffffdee0, rip at 0x7fffffffdee8
 ```
-from which we can see that the stack is indeed in the range `0x7ffffffde000` through `0x7ffffffff000`.
+
+from which we can see that the stack is indeed in the range `0x7ffffffde000` through
+`0x7ffffffff000`.
 
 # The heap
 
@@ -255,8 +256,8 @@ Mapped address spaces:
   0xffffffffff600000 0xffffffffff601000     0x1000        0x0  --xp   [vsyscall]
 ```
 
-This looks _very_ similar to the `empty` example above. There's a `[stack]`, but no `[heap]`!
-So we step over the `calloc(3)` call, and inspect the mappings again:
+This looks _very_ similar to the `empty` example above. There's a `[stack]`, but no `[heap]`! So we
+step over the `calloc(3)` call, and inspect the mappings again:
 
 ```sh
 (gdb) next
@@ -446,4 +447,3 @@ segments. Segments are what get loaded into memory, and they consist of one or m
 |              |
 +--------------+ 0x7ffffffff000
 ```
-
