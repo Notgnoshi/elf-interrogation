@@ -131,3 +131,53 @@ hello, Bob
 >
 $
 ```
+
+# Relocatable and position-independent code
+
+Compile one source file and you get a **relocatable object** (`.o`); link objects together and you
+get an executable or a **shared object** (`.so`). `readelf -h` reports which kind a file is:
+
+```sh
+$ g++ -fPIC -c concat.cpp -o concat.o
+$ readelf -h concat.o | grep Type
+  Type:                              REL (Relocatable file)
+$ readelf -h libconcat.so.1 | grep Type
+  Type:                              DYN (Shared object file)
+```
+
+**Relocatable** means the addresses are not decided yet. `greet.cpp` refers to the `"hello, "`
+string literal, but the compiler does not know where that literal will live, so instead of an
+address it leaves a blank and records a *relocation* telling the linker to patch the real address in
+later. `readelf -r` lists those blanks:
+
+```sh
+$ g++ -fPIC -c greet.cpp -o greet.o
+$ readelf -r greet.o | grep rodata
+00000000001e  000900000002 R_X86_64_PC32     0000000000000000 .rodata - 4
+000000000044  000900000002 R_X86_64_PC32     0000000000000000 .rodata + 4
+000000000035  000900000002 R_X86_64_PC32     0000000000000000 .rodata + 36
+```
+
+Each row is one blank. Linking is, in large part, assigning final addresses and filling them in.
+
+**Position-independent** means the code runs correctly no matter what address it is loaded at. The
+relocation *type* is where you see it. `R_X86_64_PC32` above is PC-relative: the literal is reached
+as an offset from the current instruction, so the same bytes work wherever the library lands.
+Compile without `-fPIC` and the compiler emits absolute addresses instead (`R_X86_64_32`):
+
+```sh
+$ g++ -fno-pic -fno-pie -c greet.cpp -o greet.o
+$ readelf -r greet.o | grep rodata
+000000000020  00090000000a R_X86_64_32       0000000000000000 .rodata + 0
+000000000042  00090000000a R_X86_64_32       0000000000000000 .rodata + 8
+000000000033  00090000000a R_X86_64_32       0000000000000000 .rodata + 3a
+```
+
+A shared library is mapped at a different address on every run (this is what ASLR does), so a
+hardcoded absolute address would be wrong. A `.so` must therefore be position-independent; build one
+from non-PIC objects and the linker refuses:
+
+```sh
+$ g++ -shared greet.o -o libgreet.so.1
+/usr/bin/ld.bfd: greet.o: relocation R_X86_64_32 against `.rodata' can not be used when making a shared object; recompile with -fPIC
+```
