@@ -244,11 +244,14 @@ $ LD_DEBUG=libs ./greet
 ./greet: error while loading shared libraries: libgreet.so.1: cannot open shared object file: No such file or directory
 ```
 
-That trace is the loader's search order, top to bottom: directories from `LD_LIBRARY_PATH`, then the
-cache `/etc/ld.so.cache`, then the system defaults `/lib64` and `/usr/lib64`.
+That trace is the loader's search order, top to bottom:
 
-Our build directory is in none of those default lists. We have three options at our disposal to get
-our application to load the `libgreet.so.1` and `libconcat.so.1` DSOs:
+* `LD_LIBRARY_PATH`
+* ldconfig cache `/etc/ld.so.cache`
+* system default library directories `/lib64/` and `/usr/lib64/`
+
+Our build directory is in none of those default locations. We have three options at our disposal to
+get our application to load the `libgreet.so.1` and `libconcat.so.1` DSOs:
 
 * Point `LD_LIBRARY_PATH` into the build directory
 * Install the DSOs into a system library path
@@ -260,3 +263,47 @@ $ LD_LIBRARY_PATH=. ./greet
 hello, world
 >
 ```
+
+# ldconfig
+
+One step in the search-order trace above was `search cache=/etc/ld.so.cache`. Scanning every library
+directory on each program start would be slow, so the loader consults a prebuilt index that maps
+each soname to a path on disk. `ldconfig` builds that index; `ldconfig -p` dumps it:
+
+```sh
+$ ldconfig -p | head -1
+2337 libs found in cache `/etc/ld.so.cache'
+$ ldconfig -p | grep libstdc++.so.6
+    libstdc++.so.6 (libc6,x86-64) => /lib64/libstdc++.so.6
+    libstdc++.so.6 (libc6) => /lib/libstdc++.so.6
+```
+
+The cache is a snapshot from the last time `ldconfig` ran, not a live view of the filesystem, so a
+freshly built library is absent even though the file exists. The cache is regenerated:
+
+* As a package install/upgrade/removal post-install scriptlet
+* On boot (`ldconfig.service` conditionally depends on `/etc/` being modified)
+* Manually
+
+Our `libconcat.so.1` has never been indexed, which makes sense, because it's not installed in a
+system library path:
+
+```sh
+$ ldconfig -p | grep libconcat
+$
+```
+
+In addition to speeding up library path resolution, `ldconfig` also caches DSOs installed in
+locations _other than_ the default system library paths. This is configured by `/etc/ld.so.conf`,
+which loads any config file in `/etc/ld.so.conf.d/*.conf`.
+
+```sh
+$ cat /etc/ld.so.conf
+include ld.so.conf.d/*.conf
+$ cat /etc/ld.so.conf.d/llvm19-x86_64.conf
+/usr/lib64/llvm19/lib
+```
+
+This is how library paths like `/usr/lib64/llvm21/lib/` get resolved, which otherwise wouldn't be
+found through the path based lookup. Said differently, some libraries are installed in paths
+**only** accessible through the `ldconfig` cache.
