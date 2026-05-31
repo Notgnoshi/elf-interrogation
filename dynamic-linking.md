@@ -147,7 +147,7 @@ $ readelf -h libconcat.so.1 | grep Type
 
 **Relocatable** means the addresses are not decided yet. `greet.cpp` refers to the `"hello, "`
 string literal, but the compiler does not know where that literal will live, so instead of an
-address it leaves a blank and records a *relocation* telling the linker to patch the real address in
+address it leaves a blank and records a _relocation_ telling the linker to patch the real address in
 later. `readelf -r` lists those blanks:
 
 ```sh
@@ -161,7 +161,7 @@ $ readelf -r greet.o | grep rodata
 Each row is one blank. Linking is, in large part, assigning final addresses and filling them in.
 
 **Position-independent** means the code runs correctly no matter what address it is loaded at. The
-relocation *type* is where you see it. `R_X86_64_PC32` above is PC-relative: the literal is reached
+relocation _type_ is where you see it. `R_X86_64_PC32` above is PC-relative: the literal is reached
 as an offset from the current instruction, so the same bytes work wherever the library lands.
 Compile without `-fPIC` and the compiler emits absolute addresses instead (`R_X86_64_32`):
 
@@ -180,4 +180,83 @@ from non-PIC objects and the linker refuses:
 ```sh
 $ g++ -shared greet.o -o libgreet.so.1
 /usr/bin/ld.bfd: greet.o: relocation R_X86_64_32 against `.rodata' can not be used when making a shared object; recompile with -fPIC
+```
+
+# Locating libraries: "cannot open shared object file"
+
+With the libraries built but not installed anywhere the loader looks, running `greet` directly fails
+before `main()` runs:
+
+```sh
+$ ./greet
+./greet: error while loading shared libraries: libgreet.so.1: cannot open shared object file: No such file or directory
+```
+
+This is the **locate** phase failing: the loader needs `libgreet.so.1` but cannot find the file. To
+list what an executable needs and where each dependency resolves, ask the loader to resolve them and
+print the result instead of running the program, by setting `LD_TRACE_LOADED_OBJECTS=1`:
+
+```sh
+$ LD_TRACE_LOADED_OBJECTS=1 ./greet
+    linux-vdso.so.1 (0x00007ffbf4e15000)
+    libgreet.so.1 => not found
+    libstdc++.so.6 => /lib64/libstdc++.so.6 (0x00007ffbf4a00000)
+    libm.so.6 => /lib64/libm.so.6 (0x00007ffbf4cd9000)
+    libgcc_s.so.1 => /lib64/libgcc_s.so.1 (0x00007ffbf49d3000)
+    libc.so.6 => /lib64/libc.so.6 (0x00007ffbf47d8000)
+    /lib64/ld-linux-x86-64.so.2 (0x00007ffbf4e17000)
+```
+
+Notice that `libconcat.so.1` does not appear at all: it is `libgreet`'s dependency, and the loader
+never got far enough to discover it.
+
+Using `LD_TRACE_LOADED_OBJECTS` required attempting to _load_ the application with the dynamic
+loader. In cross compilation or foreign application contexts, this might not work as the dynamic
+loader needed for an application may not be present. To inspect dynamic dependencies without running
+anything, use `readelf -d` or `objdump -p`, which show the `NEEDED` entries the linker recorded:
+
+```sh
+$ readelf -d ./greet | grep NEEDED
+ 0x0000000000000001 (NEEDED)             Shared library: [libgreet.so.1]
+ 0x0000000000000001 (NEEDED)             Shared library: [libstdc++.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libm.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libgcc_s.so.1]
+ 0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]
+```
+
+This only lists top-level dependencies though. To find the full transitive dependency tree, you need
+to be in the target environment and instrument the target dynamic loader.
+
+To see _where_ the loader looks, set `LD_DEBUG=libs`. It traces every directory attempted:
+
+```sh
+$ LD_DEBUG=libs ./greet
+   1004936: find library=libgreet.so.1 [0]; searching
+   1004936:  search path=/home/nots/.local/lib  (LD_LIBRARY_PATH)
+   1004936:   trying file=/home/nots/.local/lib/libgreet.so.1
+   1004936:     (no such file)
+   1004936:  search cache=/etc/ld.so.cache
+   1004936:  search path=/lib64:/usr/lib64  (system search path)
+   1004936:   trying file=/lib64/libgreet.so.1
+   1004936:     (no such file)
+   1004936:   trying file=/usr/lib64/libgreet.so.1
+   1004936:     (no such file)
+./greet: error while loading shared libraries: libgreet.so.1: cannot open shared object file: No such file or directory
+```
+
+That trace is the loader's search order, top to bottom: directories from `LD_LIBRARY_PATH`, then the
+cache `/etc/ld.so.cache`, then the system defaults `/lib64` and `/usr/lib64`.
+
+Our build directory is in none of those default lists. We have three options at our disposal to get
+our application to load the `libgreet.so.1` and `libconcat.so.1` DSOs:
+
+* Point `LD_LIBRARY_PATH` into the build directory
+* Install the DSOs into a system library path
+* Set the application's `RPATH=$ORIGIN`
+
+```sh
+$ LD_LIBRARY_PATH=. ./greet
+> world
+hello, world
+>
 ```
