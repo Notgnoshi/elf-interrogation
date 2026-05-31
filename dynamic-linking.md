@@ -38,3 +38,96 @@ flowchart TD
     end
     tgt --> locate
 ```
+
+# Meet the example
+
+Our running example is a three-link chain: an executable that calls a function in one library, which
+in turn calls a function in another.
+
+```mermaid
+flowchart LR
+    greet["greet (executable)"] -->|"calls greet(name)"| libgreet["libgreet.so"]
+    libgreet -->|"calls concat(...)"| libconcat["libconcat.so"]
+```
+
+```cpp
+// concat.hpp
+#pragma once
+#include <string>
+
+std::string concat(const std::string& a, const std::string& b);
+```
+
+```cpp
+// concat.cpp
+#include "concat.hpp"
+
+std::string concat(const std::string& a, const std::string& b) {
+    return a + b;
+}
+```
+
+```cpp
+// greet.hpp
+#pragma once
+#include <string>
+
+void greet(const std::string& name);
+```
+
+```cpp
+// greet.cpp
+#include "greet.hpp"
+#include "concat.hpp"
+
+#include <iostream>
+
+void greet(const std::string& name) {
+    std::cout << concat("hello, ", name) << '\n';
+}
+```
+
+```cpp
+// main.cpp
+#include "greet.hpp"
+
+#include <iostream>
+
+int main() {
+    std::string name;
+    for (;;) {
+        std::cout << "> ";
+        if (!std::getline(std::cin, name) || name.empty()) {
+            break;
+        }
+        greet(name);
+    }
+    return 0;
+}
+```
+
+`main()` loops reading names from stdin; an empty line or EOF exits.
+
+Build the chain bottom-up:
+
+```sh
+g++ -fPIC -shared concat.cpp -Wl,-soname,libconcat.so.1 -o libconcat.so.1 && ln -sf libconcat.so.1 libconcat.so
+g++ -fPIC -shared greet.cpp  -L. -lconcat -Wl,-soname,libgreet.so.1 -o libgreet.so.1 && ln -sf libgreet.so.1 libgreet.so
+g++ main.cpp -L. -lgreet -Wl,-rpath-link,. -o greet
+```
+
+`-rpath-link` lets the linker resolve a dependency's own dependencies (`libgreet` needs `libconcat`)
+at link time, without recording anything in the binary. The C++ sources also pull in the C++ runtime
+(`libstdc++`, `libgcc_s`).
+
+The libraries are not installed system-wide, so we point the loader at the build directory to run:
+
+```sh
+$ LD_LIBRARY_PATH=. ./greet
+> world
+hello, world
+> Bob
+hello, Bob
+>
+$
+```

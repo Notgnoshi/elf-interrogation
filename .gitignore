@@ -3,6 +3,8 @@ examples/empty/empty
 examples/global/global
 examples/greet/greet
 examples/heap/heap
+examples/dynamic/greet
+examples/dynamic/greet_rpath
 
 # Prerequisites
 *.d
@@ -19,6 +21,7 @@ examples/heap/heap
 
 # Compiled Dynamic libraries
 *.so
+*.so.*
 *.dylib
 *.dll
 
