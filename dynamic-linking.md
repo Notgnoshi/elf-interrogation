@@ -132,7 +132,7 @@ hello, Bob
 $
 ```
 
-# Relocatable and position-independent code
+# Building: relocatable and position-independent code
 
 Compile one source file and you get a **relocatable object** (`.o`); link objects together and you
 get an executable or a **shared object** (`.so`). `readelf -h` reports which kind a file is:
@@ -182,7 +182,14 @@ $ g++ -shared greet.o -o libgreet.so.1
 /usr/bin/ld.bfd: greet.o: relocation R_X86_64_32 against `.rodata' can not be used when making a shared object; recompile with -fPIC
 ```
 
-# Locating libraries: "cannot open shared object file"
+# Locating libraries
+
+Once a binary is built, the loader has to find each shared library it depends on before the program
+can start. This is the **locate** phase, and it is where the largest family of dynamic-linking
+problems live: the search path, the `ldconfig` cache, library versioning, and the rpath baked into
+the binary all feed into it.
+
+## "cannot open shared object file"
 
 With the libraries built but not installed anywhere the loader looks, running `greet` directly fails
 before `main()` runs:
@@ -264,7 +271,7 @@ hello, world
 >
 ```
 
-# ldconfig
+## The ldconfig cache
 
 One step in the search-order trace above was `search cache=/etc/ld.so.cache`. Scanning every library
 directory on each program start would be slow, so the loader consults a prebuilt index that maps
@@ -308,7 +315,7 @@ This is how library paths like `/usr/lib64/llvm21/lib/` get resolved, which othe
 found through the path based lookup. Said differently, some libraries are installed in paths
 **only** accessible through the `ldconfig` cache.
 
-# SONAMEs, ABI versions, and versioned DSO symlinks
+## SONAMEs, ABI versions, and versioned DSO symlinks
 
 Every `.so` library contains a `SONAME` field in its header that defines the library name that DSO
 provides. ELF files specify DSO dependencies by recording the `SONAME`s they depend on in `NEEDED`
@@ -371,7 +378,7 @@ Typically though, the DSO versioning symlinks are created by the distro maintain
 in the (RPM, DEB, IPK, etc) package. The package manager then runs `ldconfig` in a post-install
 scriptlet.
 
-# RPATH and RUNPATH
+## RPATH and RUNPATH
 
 `LD_LIBRARY_PATH` works but is a runtime crutch; installing system-wide needs root and `ldconfig`.
 The third option records the search path _inside the binary itself_, so it finds its libraries with
@@ -421,3 +428,13 @@ Also note that `RPATH` is searched _before_ `LD_LIBRARY_PATH`, and thus can't be
 runtime. `RUNPATH` is searched _after_ `LD_LIBRARY_PATH`, which enables users to override it at
 runtime. CMake defaults to `RUNPATH`, so you have to know to pass `--disable-new-dtags` if you want
 to use `RPATH` instead.
+
+# Resolving symbols
+
+## Undefined references (link time)
+
+## Undefined symbols (run time)
+
+## Lazy binding and BIND_NOW
+
+## Symbol visibility
