@@ -370,3 +370,54 @@ lrwxrwxrwx. 1 nots nots    17 May 31 18:56 libgreet.so.1 -> libgreet.so.1.0.0
 Typically though, the DSO versioning symlinks are created by the distro maintainer and are included
 in the (RPM, DEB, IPK, etc) package. The package manager then runs `ldconfig` in a post-install
 scriptlet.
+
+# RPATH and RUNPATH
+
+`LD_LIBRARY_PATH` works but is a runtime crutch; installing system-wide needs root and `ldconfig`.
+The third option records the search path _inside the binary itself_, so it finds its libraries with
+no external configuration. This is what `-rpath` does:
+
+```sh
+$ g++ main.cpp -L. -lgreet -Wl,--as-needed -Wl,-rpath,'$ORIGIN' -o greet
+$ readelf -d greet | grep PATH
+ 0x000000000000001d (RUNPATH)            Library runpath: [$ORIGIN]
+```
+
+The `$ORIGIN` token is evaluated at load time to the directory containing the binary, so the path is
+relative to the executable rather than hardcoded absolute. This is what makes a relocatable install
+work: the binary finds its siblings wherever the whole tree is placed.
+
+This is a common pattern for self-contained applications that ship their own libraries.
+
+Note what we asked for versus what we got: we passed `-rpath`, but the binary records `RUNPATH`.
+`RPATH` and `RUNPATH` are two different dynamic tags with importantly different behavior, and modern
+linkers emit `RUNPATH` by default. If we run our binary as-is with just the `RUNPATH` specified, it
+successfully finds `libgreet.so.1`, but then fails to find `libconcat.so.1`:
+
+```sh
+$ ./greet
+./greet: error while loading shared libraries: libconcat.so.1: cannot open shared object file: No such file or directory
+```
+
+This is because `RUNPATH` only applies to the binary's **direct** dependencies, and not to _their_
+transitive dependencies. So we can fix the problem in one of two ways:
+
+1. Also set `RUNPATH` on `libgreet.so.1` so it can find `libconcat.so.1`
+2. Set `RPATH` instead of `RUNPATH` on the `greet` executable
+
+We can force the linker to emit `RPATH` instead of `RUNPATH` with `--disable-new-dtags`:
+
+```sh
+$ g++ main.cpp -L. -lgreet -Wl,--as-needed -Wl,--disable-new-dtags,-rpath,'$ORIGIN' -o greet
+$ readelf -d greet | grep PATH
+ 0x000000000000000f (RPATH)              Library rpath: [$ORIGIN]
+$ ./greet
+> world
+hello, world
+>
+```
+
+Also note that `RPATH` is searched _before_ `LD_LIBRARY_PATH`, and thus can't be overridden at
+runtime. `RUNPATH` is searched _after_ `LD_LIBRARY_PATH`, which enables users to override it at
+runtime. CMake defaults to `RUNPATH`, so you have to know to pass `--disable-new-dtags` if you want
+to use `RPATH` instead.
