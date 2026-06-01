@@ -220,7 +220,7 @@ never got far enough to discover it.
 Using `LD_TRACE_LOADED_OBJECTS` required attempting to _load_ the application with the dynamic
 loader. In cross compilation or foreign application contexts, this might not work as the dynamic
 loader needed for an application may not be present. To inspect dynamic dependencies without running
-anything, use `readelf -d` or `objdump -p`, which show the `NEEDED` entries the linker recorded:
+anything, use `readelf -d`, which show the `NEEDED` entries the linker recorded:
 
 ```sh
 $ readelf -d ./greet | grep NEEDED
@@ -438,3 +438,100 @@ to use `RPATH` instead.
 ## Lazy binding and BIND_NOW
 
 ## Symbol visibility
+
+# Troubleshooting tools
+
+So far, we've introduced a number of tools that can help us troubleshoot issues already:
+
+* `readelf`
+* `LD_TRACE_LOADED_OBJECTS=1`
+* `LD_DEBUG=libs`
+* `ldconfig`
+* `LD_LIBRARY_PATH`, `RPATH`, `RUNPATH`
+* `nm`
+* `c++filt`
+* `LD_BIND_NOW=1`
+
+But there are _many_ more tools in the toolbox that this document did not cover. Here's some more
+tools that could potentially be useful:
+
+**Dynamic loader environment variables**
+
+* `LD_BIND_NOT`
+* `LD_DEBUG_OUTPUT`
+* `LD_DYNAMIC_WEAK`
+* `LD_ORIGIN_PATH`
+* `LD_PRELOAD`
+* `LD_PROFILE` / `LD_PROFILE_OUTPUT`
+* `LD_SHOW_AUXV`
+* `LD_TRACE_PRELINKING`
+* `LD_VERBOSE`
+* `LD_WARN`
+
+**Dependency / DSO listing**
+
+* `ldd`
+* `lddtree` (pax-utils)
+* `xldd` (cross-compilation `ldd` wrapper)
+
+**binutils**
+
+* `elfedit`
+* `objcopy`
+* `objdump`
+* `strip`
+* `addr2line`
+* `size`
+* `strings`
+* `ar` / `ranlib` / `as`
+* `dwp`
+* `gprof`
+
+**elfutils**
+
+`eu-readelf`, `eu-objdump`, `eu-nm`, `eu-elflint`, `eu-findtextrel`, `eu-elfclassify`, `eu-elfcmp`,
+`eu-elfcompress`, `eu-strip`, `eu-unstrip`, `eu-strings`, `eu-size`, `eu-addr2line`, `eu-stack`,
+`eu-stacktrace`, `eu-srcfiles`, `eu-ar`, `eu-ranlib`, `eu-make-debug-archive`
+
+**LLVM tools**
+
+`llvm-readelf`, `llvm-readobj`, `llvm-objdump`, `llvm-nm`, `llvm-objcopy`, `llvm-strip`,
+`llvm-bitcode-strip`, `llvm-cxxfilt`, `llvm-undname`, `llvm-addr2line`, `llvm-symbolizer`,
+`llvm-dwarfdump`, `llvm-ifs`, `llvm-install-name-tool`, `llvm-otool`, `llvm-readtapi`, `llvm-ar`,
+`llvm-ranlib`, `llvm-lib`, `llvm-dlltool`
+
+**pax-utils**
+
+* `scanelf`
+* `dumpelf`
+* `pspax`
+* `scanmacho`
+* `symtree`
+
+**Binary patching / editing**
+
+* `patchelf`
+* `chrpath`
+
+**Symbol name demangling**
+
+* `llvm-cxxfilt`
+* `llvm-undname`
+* `rustfilt`
+
+**Runtime tracing and debugging**
+
+* `strace` (`strace-log-merge`)
+* `ltrace`
+* `gdb`
+* `lldb` (`lldb-server`)
+* `sprof` (with `LD_PROFILE`)
+* `eu-stack`
+
+**Process and system inspection**
+
+* `/proc/<pid>/maps`
+* `/proc/<pid>/smaps`
+* `/proc/<pid>/auxv`
+* `pmap`
+* `lsof`
