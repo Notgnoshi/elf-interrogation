@@ -307,3 +307,66 @@ $ cat /etc/ld.so.conf.d/llvm19-x86_64.conf
 This is how library paths like `/usr/lib64/llvm21/lib/` get resolved, which otherwise wouldn't be
 found through the path based lookup. Said differently, some libraries are installed in paths
 **only** accessible through the `ldconfig` cache.
+
+# SONAMEs, ABI versions, and versioned DSO symlinks
+
+Every `.so` library contains a `SONAME` field in its header that defines the library name that DSO
+provides. ELF files specify DSO dependencies by recording the `SONAME`s they depend on in `NEEDED`
+fields, which you can parse with `readelf --dynamic`. When using path-based lookups the dynamic
+loader searches the filesystem for a file named with the value of `SONAME`. It's technically
+possible to use a different filename when doing cache based lookups with `ldconfig`, but doing so
+would be pretty dang weird.
+
+The `SONAME` often ends in a number, which is the ABI version of the library. The expectation is
+that two libraries with the same `SONAME` are ABI compatible with each other:
+
+SQLite is an interesting counterexample. <https://sqlite.org/version3.html> describes the rationale
+to include `sqlite3` in the symbol name of every symbol; it allows multiple ABI-incompatible
+versions of SQLite to exist in the same binary without symbol conflicts. That's unusual. Their
+`SONAME`s ABI version is `0` as a result of them never making a breaking ABI change, which is
+remarkable.
+
+```sh
+$ ls -l /lib64/libsqlite*
+lrwxrwxrwx. 1 root root   20 Jan 19 18:00 /lib64/libsqlite3.so.0 -> libsqlite3.so.3.51.2
+-rwxr-xr-x. 1 root root 1.6M Jan 19 18:00 /lib64/libsqlite3.so.3.51.2
+$ readelf --dynamic /lib64/libsqlite3.so.0 | grep SONAME
+ 0x000000000000000e (SONAME)             Library soname: [libsqlite3.so.0]
+```
+
+A more typical pattern is to include the ABI version in the `SONAME`, which, if you follow the
+SemVer versioning convention, is also the major version number (breaking ABI changes increment the
+major version just like breaking API changes do):
+
+```sh
+$ ls -l /lib64/libcrypto.so*
+lrwxrwxrwx. 1 root root   18 Apr 19 19:00 /lib64/libcrypto.so -> libcrypto.so.3.5.5
+lrwxrwxrwx. 1 root root   18 Apr 19 19:00 /lib64/libcrypto.so.3 -> libcrypto.so.3.5.5
+-rwxr-xr-x. 1 root root 5.6M Apr 19 19:00 /lib64/libcrypto.so.3.5.5
+$ readelf --dynamic /lib64/libcrypto.so | grep SONAME
+ 0x000000000000000e (SONAME)             Library soname: [libcrypto.so.3]
+```
+
+These examples also demonstrate the common DSO symlink versioning pattern. The real file is
+`libcrypto.so.3.5.5`, but its `SONAME` is `libcrypto.so.3`, which is what the dynamic loader looks
+for. We can replicate something like this with our `libgreet.so` example:
+
+```sh
+$ rm libgreet.so*
+$ g++ -fPIC -shared greet.cpp -L. -lconcat -Wl,-soname,libgreet.so.1 -o libgreet.so.1.0.0
+$ ls libgreet.so*
+libgreet.so.1.0.0
+```
+
+Rather than manually creating the symlink, we can actually just use `ldconfig` to do it for us.
+
+```sh
+$ ldconfig -n .
+$ ls -l libgreet.so*
+lrwxrwxrwx. 1 nots nots    17 May 31 18:56 libgreet.so.1 -> libgreet.so.1.0.0
+-rwxr-xr-x. 1 nots nots 24808 May 31 18:56 libgreet.so.1.0.0
+```
+
+Typically though, the DSO versioning symlinks are created by the distro maintainer and are included
+in the (RPM, DEB, IPK, etc) package. The package manager then runs `ldconfig` in a post-install
+scriptlet.
