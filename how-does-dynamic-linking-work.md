@@ -241,7 +241,8 @@ $ readelf --dynamic greet | grep NEEDED
 
 ## Library search order
 
-After learning what DSOs it needs to load, the dynamic linker searches for them with in a specific order:
+After learning what DSOs it needs to load, the dynamic linker searches for them with in a specific
+order:
 
 1. `DT_RPATH` specified in the executable
 2. `LD_LIBRARY_PATH` environment variable
@@ -263,9 +264,144 @@ hello, bob
 
 ## Debugging library search failures
 
+When troubleshooting library search failures, there are a few tools worth knowing about. The
+[ld.so(8)](https://man7.org/linux/man-pages/man8/ld.so.8.html) man page lists the environment
+variables (of which `LD_LIBRARY_PATH` is one) that can tweak `ld.so`s behavior.
+
+The variables that are helpful for library search issues are:
+
+* `LD_TRACE_LOADED_OBJECTS=1`, which prints libraries as they are loaded, and then exits. The
+  application being traced does not execute its `main()` function
+* `LD_DEBUG=libs`, which prints the paths that the dynamic loader attempted to load DSOs from. There
+  are other values you can pass to `LD_DEBUG` to debug other aspects of the dynamic interpreter.
+* `LD_DEBUG_OUTPUT=some/path.txt`, which saves the output from `LD_DEBUG` to the given file instead
+  of printing to stderr.
+
+If we use `LD_TRACE_LOADED_OBJECTS` on our executable, it shows the libraries that `ld.so` _was_
+able to find, as well as the two `libgreet.so` and `libconcat.so` that it failed to find:
+
+```sh
+$ LD_TRACE_LOADED_OBJECTS=1 ./greet
+    linux-vdso.so.1 (0x00007f88de551000)
+    libgreet.so => not found
+    libconcat.so => not found
+    libstdc++.so.6 => /lib64/libstdc++.so.6 (0x00007f88de200000)
+    libm.so.6 => /lib64/libm.so.6 (0x00007f88de0e9000)
+    libgcc_s.so.1 => /lib64/libgcc_s.so.1 (0x00007f88de4ff000)
+    libc.so.6 => /lib64/libc.so.6 (0x00007f88ddeee000)
+    /lib64/ld-linux-x86-64.so.2 (0x00007f88de553000)
+```
+
+This isn't super helpful for troubleshooting _why_ an application can't find libraries, but it _is_
+useful for discovering the full transitive dynamic library dependency tree of an application.
+
+If we use `LD_DEBUG`, we can see the dynamic loader attempting to search multiple locations and fail:
+
+```sh
+$ LD_DEBUG=libs ./greet
+   1591960:	find library=libgreet.so [0]; searching
+   1591960:	 search cache=/etc/ld.so.cache
+   1591960:	 search path=/lib64/glibc-hwcaps/x86-64-v4:/lib64/glibc-hwcaps/x86-64-v3:/lib64/glibc-hwcaps/x86-64-v2:/lib64:/usr/lib64/glibc-hwcaps/x86-64-v4:/usr/lib64/glibc-hwcaps/x86-64-v3:/usr/lib64/glibc-hwcaps/x86-64-v2:/usr/lib64(system search path)
+   1591960:	  trying file=/lib64/glibc-hwcaps/x86-64-v4/libgreet.so
+   1591960:	    (no such file)
+   1591960:	  trying file=/lib64/glibc-hwcaps/x86-64-v3/libgreet.so
+   1591960:	    (no such file)
+   1591960:	  trying file=/lib64/glibc-hwcaps/x86-64-v2/libgreet.so
+   1591960:	    (no such file)
+   1591960:	  trying file=/lib64/libgreet.so
+   1591960:	    (no such file)
+   1591960:	  trying file=/usr/lib64/glibc-hwcaps/x86-64-v4/libgreet.so
+   1591960:	    (no such file)
+   1591960:	  trying file=/usr/lib64/glibc-hwcaps/x86-64-v3/libgreet.so
+   1591960:	    (no such file)
+   1591960:	  trying file=/usr/lib64/glibc-hwcaps/x86-64-v2/libgreet.so
+   1591960:	    (no such file)
+   1591960:	  trying file=/usr/lib64/libgreet.so
+   1591960:	    (no such file)
+   1591960:	
+./greet: error while loading shared libraries: libgreet.so: cannot open shared object file: No such file or directory
+```
+
 ## RPATH and RUNPATH
 
+`RPATH` and `RUNPATH` are two different fields you can set in the ELF binary to specify paths the
+dynamic linker should look to find libraries for the application.
+
+* `RPATH` is searched before `LD_LIBRARY_PATH`, and is now considered deprecated because it can't be
+  overridden.
+* `RUNPATH` can be overridden by `LD_LIBRARY_PATH`, but its value doesn't cascade to transitive
+  dependencies like `RPATH` does.
+
+Let's experiment. We can set the `RUNPATH` with the `-rpath` linker flag at build time. We _could_
+set it to an absolute path, but then we would lose the ability to move the library / executable
+install from machine to machine. So there's a `$ORIGIN` placeholder (the `$` is literal, it's not a
+shell variable) that represents the directory the application binary is located in.
+
+```sh
+$ g++ main.cpp -L. -lgreet -Wl,-rpath,'$ORIGIN' -o greet
+$ readelf --dynamic greet | grep -E 'NEEDED|RUNPATH|RPATH'
+ 0x0000000000000001 (NEEDED)             Shared library: [libgreet.so]
+ 0x0000000000000001 (NEEDED)             Shared library: [libstdc++.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libm.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libgcc_s.so.1]
+ 0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]
+ 0x000000000000001d (RUNPATH)            Library runpath: [$ORIGIN]
+```
+
+Now since `libgreet.so` is in the `greet` executable's `NEEDED` list, the dynamic loader is able to
+find `libgreet.so` through the executable's `RUNPATH` without setting `LD_LIBRARY_PATH`:
+
+```sh
+$ LD_TRACE_LOADED_OBJECTS=1 ./greet
+	linux-vdso.so.1 (0x00007f80a25fd000)
+	libgreet.so => /home/nots/src/elf-interrogation/examples/dynamic/libgreet.so (0x00007f80a25f0000)
+	libstdc++.so.6 => /lib64/libstdc++.so.6 (0x00007f80a2200000)
+	libm.so.6 => /lib64/libm.so.6 (0x00007f80a24bc000)
+	libgcc_s.so.1 => /lib64/libgcc_s.so.1 (0x00007f80a21d3000)
+	libc.so.6 => /lib64/libc.so.6 (0x00007f80a1fd8000)
+	/lib64/ld-linux-x86-64.so.2 (0x00007f80a25ff000)
+	libconcat.so => not found
+```
+
+_but it still fails to find `libconcat.so`_ because it's a transitive dependency of `libgreet.so`,
+and `RUNPATH` only applies to top-level dependencies.
+
+There's two resolutions we could pursue:
+
+1. Set `RUNPATH` on `libgreet.so` in addition to the `greet` executable
+2. Use `RPATH` instead of `RUNPATH`
+
+As an example, let's use `RPATH`, but note that if we do so, we will no longer be able to use
+`LD_LIBRARY_PATH` to override where the dynamic loader looks for libraries. Since `RPATH` is
+deprecated in favor of `RUNPATH`, we have to pass `--diable-new-dtags` to the linker.
+
+```sh
+$ g++ main.cpp -L. -lgreet -Wl,--disable-new-dtags,-rpath,'$ORIGIN' -o greet
+$ readelf --dynamic greet | grep -E 'NEEDED|RUNPATH|RPATH'
+ 0x0000000000000001 (NEEDED)             Shared library: [libgreet.so]
+ 0x0000000000000001 (NEEDED)             Shared library: [libstdc++.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libm.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libgcc_s.so.1]
+ 0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]
+ 0x000000000000000f (RPATH)              Library rpath: [$ORIGIN]
+```
+
+(notice that `RUNPATH` turned into `RPATH`) and now we're able to locate both libraries when we
+execute `greet`:
+
+```sh
+$ ./greet
+> bob
+hello, bob
+```
+
+`RPATH` and `RUNPATH` are most common when an application is shipped in a self-contained install
+prefix like `/opt/foo/bin/foo.exe` with libraries located in `/opt/foo/lib/`. In this example, you'd
+set an `RPATH` of `$ORIGIN/../lib`.
+
 ## ld.so.cache and ldconfig
+
+## ABI compatibility, SONAMEs, and versioned DSO symlinks
 
 # Relocations and the GOT
 
