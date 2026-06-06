@@ -90,3 +90,41 @@ $ g++ -shared concat.cpp -o libconcat.so
 /usr/bin/ld.bfd: failed to set dynamic section sizes: bad value
 collect2: error: ld returned 1 exit status
 ```
+
+This error presumably has something to do with a **relocation**. What is that all about?
+
+## Relocations
+
+Compile one source file on its own and you get a _relocatable object_ (`.o`):
+
+```sh
+$ g++ -c concat.cpp -o concat.o
+$ readelf -h concat.o | grep Type:
+  Type:                              REL (Relocatable file)
+```
+
+A **relocatable object** is one that has placeholders for addresses that are not yet known. The
+`concat(a, b)` function is an example of this: it refers to `std::operator+()` to concatenate two
+strings, but `std::operator+()` is defined in `libstdc++`, not in `concat.cpp`, so the compiler
+cannot resolve it immediately.
+
+Instead, it leaves a **relocation** placeholder:
+
+```sh
+$ readelf -r concat.o
+Relocation section '.rela.text' at offset 0x2a10 contains 1 entry:
+  Offset          Info           Type           Sym. Value    Sym. Name + Addend
+000000000027  003a00000004 R_X86_64_PLT32    0000000000000000 _ZStplIcSt11char_[...] - 4
+```
+
+That looks like nonsense, and it's truncated. Add `-C` to demangle the symbol name and `--wide` so
+it isn't cut off:
+
+```sh
+$ readelf -rC --wide concat.o
+Relocation section '.rela.text' at offset 0x2a10 contains 1 entry:
+    Offset             Info             Type               Symbol's Value  Symbol's Name + Addend
+0000000000000027  0000003a00000004 R_X86_64_PLT32         0000000000000000 std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > std::operator+<char, std::char_traits<char>, std::allocator<char> >(...) - 4
+```
+
+So at offset `0x27` in `.text` there's a reference to `std::operator+` that the linker must resolve.
