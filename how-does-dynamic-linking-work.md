@@ -111,20 +111,54 @@ cannot resolve it immediately.
 Instead, it leaves a **relocation** placeholder:
 
 ```sh
-$ readelf -r concat.o
+$ readelf --wide -r concat.o
 Relocation section '.rela.text' at offset 0x2a10 contains 1 entry:
-  Offset          Info           Type           Sym. Value    Sym. Name + Addend
-000000000027  003a00000004 R_X86_64_PLT32    0000000000000000 _ZStplIcSt11char_[...] - 4
+    Offset             Info             Type               Symbol's Value  Symbol's Name + Addend
+0000000000000027  0000003a00000004 R_X86_64_PLT32         0000000000000000 _ZStplIcSt11char_traitsIcESaIcEENSt7__cxx1112basic_stringIT_T0_T1_EERKS8_SA_ - 4
 ```
 
-That looks like nonsense, and it's truncated. Add `-C` to demangle the symbol name and `--wide` so
-it isn't cut off:
+That's gibberish. Add `-C` to demangle the symbol name:
 
 ```sh
-$ readelf -rC --wide concat.o
+$ readelf --wide -rC concat.o
 Relocation section '.rela.text' at offset 0x2a10 contains 1 entry:
     Offset             Info             Type               Symbol's Value  Symbol's Name + Addend
 0000000000000027  0000003a00000004 R_X86_64_PLT32         0000000000000000 std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > std::operator+<char, std::char_traits<char>, std::allocator<char> >(...) - 4
 ```
 
 So at offset `0x27` in `.text` there's a reference to `std::operator+` that the linker must resolve.
+
+## Position-independent code
+
+So that explains what a relocation _is_, but it doesn't explain why relocations can cause problems
+producing a shared library. The original error message mentioned `R_X86_64_32` and `.rodata`, so
+let's take a closer look:
+
+```sh
+$ readelf -r concat.o | grep rodata
+0000000000000033  000000220000000a R_X86_64_32            0000000000000000 .rodata + 0
+```
+
+The `R_X86_64_32` relocation type is an **absolute** address.
+
+If we compile with `-fPIC` as the error message suggested, we get a different relocation type:
+
+```sh
+$ g++ -fPIC -c concat.cpp -o concat.o
+$ readelf -r concat.o | grep rodata
+0000000000000035  0000002200000002 R_X86_64_PC32          0000000000000000 .rodata - 4
+```
+
+The `R_X86_64_PC32` relocation type is an address that's **relative** to the program counter
+(abbreviated "PC" - it's the address of the current instruction). This is what **position
+independent** code is: code that can be loaded at any address.
+
+This is important, because Linux uses **Address Space Layout Randomization** (ASLR) to load programs
+and libraries at random addresses as a security mitigation. So we need to compile with `-fPIC` to
+ensure that when we refer to a relocation, we do so in a way that's _relative_ to a known address.
+
+```sh
+$ g++ -fPIC -shared concat.cpp -o libconcat.so
+$ readelf -h libconcat.so | grep Type:
+  Type:                              DYN (Shared object file)
+```
