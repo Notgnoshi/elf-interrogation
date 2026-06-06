@@ -162,3 +162,125 @@ $ g++ -fPIC -shared concat.cpp -o libconcat.so
 $ readelf -h libconcat.so | grep Type:
   Type:                              DYN (Shared object file)
 ```
+
+With `-fPIC`, the libraries and executable build:
+
+```sh
+$ g++ -fPIC -shared concat.cpp -o libconcat.so
+$ g++ -fPIC -shared greet.cpp -L. -lconcat -o libgreet.so
+$ g++ main.cpp -L. -lgreet -lconcat -o greet
+```
+
+# Starting the program
+
+If we try to run `./greet`, we get yet another error:
+
+```sh
+$ ./greet
+./greet: error while loading shared libraries: libgreet.so: cannot open shared object file: No such file or directory
+```
+
+So we can see that the `greet` executable is _trying_ to load the `libgreet.so` shared library, but
+it can't find it. Before we can understand why, we need to know how the executable is attempting to
+load dynamic dependencies.
+
+We can use `strace` to watch `greet` attempt to look for `libgreet.so`:
+
+```sh
+$ strace -e open,openat ./greet
+openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+openat(AT_FDCWD, "/lib64/glibc-hwcaps/x86-64-v4/libgreet.so", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)
+openat(AT_FDCWD, "/lib64/glibc-hwcaps/x86-64-v3/libgreet.so", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)
+openat(AT_FDCWD, "/lib64/glibc-hwcaps/x86-64-v2/libgreet.so", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)
+openat(AT_FDCWD, "/lib64/libgreet.so", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)
+openat(AT_FDCWD, "/usr/lib64/glibc-hwcaps/x86-64-v4/libgreet.so", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)
+openat(AT_FDCWD, "/usr/lib64/glibc-hwcaps/x86-64-v3/libgreet.so", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)
+openat(AT_FDCWD, "/usr/lib64/glibc-hwcaps/x86-64-v2/libgreet.so", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)
+openat(AT_FDCWD, "/usr/lib64/libgreet.so", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)
+./greet: error while loading shared libraries: libgreet.so: cannot open shared object file: No such file or directory
++++ exited with 127 +++
+```
+
+Now, our `main()` function in `main.cpp` didn't have _any_ kind of code to do this loading, so how
+is it happening?
+
+On Linux, with ELF binaries, this is done by the **program interpreter** a.k.a. "dynamic
+interpreter" a.k.a. "dynamic loader" a.k.a. "dynamic linker". The path to the dynamic linker is
+hard-coded in every ELF executable, and it cannot be overridden. We can use `readelf` to see what it
+is:
+
+```sh
+$ readelf -p .interp greet
+String dump of section '.interp':
+  [     0]  /lib64/ld-linux-x86-64.so.2
+```
+
+We can refer to the [ld.so(8)](https://man7.org/linux/man-pages/man8/ld.so.8.html) man page for tons
+more information on what `ld.so` is, and how we can customize its behavior.
+
+When we run `./greet`, the first thing the Linux kernel does is read the `PT_INTERP` program header
+to find the dynamic interpreter, and then it uses that dynamic interpreter to load the executable
+and all of its dependencies. So the code that gets executed first when we run `./greet` is actually
+`ld-linux-x86-64.so.2`, not `main()`.
+
+# Finding the libraries
+
+The first thing that `ld-linux.so` does when it loads an executable is to look at the `DT_NEEDED`
+entries in the executable's dynamic section to find out what shared libraries it needs to load. We
+can use `readelf` to see these entries ourselves:
+
+```sh
+$ readelf --dynamic greet | grep NEEDED
+ 0x0000000000000001 (NEEDED)             Shared library: [libgreet.so]
+ 0x0000000000000001 (NEEDED)             Shared library: [libconcat.so]
+ 0x0000000000000001 (NEEDED)             Shared library: [libstdc++.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libm.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libgcc_s.so.1]
+ 0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]
+```
+
+## Library search order
+
+After learning what DSOs it needs to load, the dynamic linker searches for them with in a specific order:
+
+1. `DT_RPATH` specified in the executable
+2. `LD_LIBRARY_PATH` environment variable
+3. `DT_RUNPATH` specified in the executable
+4. `ld.so.cache` cache managed by `ldconfig`
+5. Default search paths
+
+The `LD_LIBRARY_PATH` environment variable is often the easiest way to get a library loaded, but
+it's intended to allow users the ability to override library lookup, so if an application depends on
+it, that can be fragile.
+
+We can use it to get the `greet` executable to find `libgreet.so` and `libconcat.so`:
+
+```sh
+$ LD_LIBRARY_PATH=. ./greet
+> bob
+hello, bob
+```
+
+## Debugging library search failures
+
+## RPATH and RUNPATH
+
+## ld.so.cache and ldconfig
+
+# Relocations and the GOT
+
+# Making a dynamic function call
+
+## The PLT and lazy binding
+
+## LD_BIND_NOW
+
+# Resolving symbols
+
+## .dynsym dynamic symbol table
+
+## Symbol visibility
+
+## Symbol versioning
+
+# More resources
