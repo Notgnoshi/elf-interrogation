@@ -4,12 +4,7 @@
 
 int main() {
     std::string name;
-    for (;;) {
-        std::cout << "> ";
-        if (!std::getline(std::cin, name) || name.empty()) {
-            break;
-        }
+    while (std::cout << "> " && std::getline(std::cin, name) && !name.empty()) {
         greet(name);
     }
-    return 0;
 }

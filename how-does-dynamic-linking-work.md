@@ -14,3 +14,79 @@ This document will attempt to provide a ground-up understanding of how dynamic l
 focus on common troubleshooting tools and failure scenarios. The exact details of how dynamic
 linking works varies between operating systems (this document is Linux-specific) but the general
 principles apply equally across all platforms.
+
+# An example application
+
+Our example is a chain of dynamic function calls:
+
+```mermaid
+flowchart LR
+    greet["greet"] -->|"greet(name)"| libgreet["libgreet.so"]
+    libgreet -->|"concat(a, b)"| libconcat["libconcat.so"]
+```
+
+Both `libgreet.so` and `libconcat.so` will be implemented by a single header+source file translation
+unit.
+
+```cpp
+// concat.hpp
+#pragma once
+#include <string>
+
+std::string concat(const std::string& a, const std::string& b);
+```
+
+```cpp
+// concat.cpp
+#include "concat.hpp"
+
+std::string concat(const std::string& a, const std::string& b) {
+    return a + b;
+}
+```
+
+```cpp
+// greet.hpp
+#pragma once
+#include <string>
+
+void greet(const std::string& name);
+```
+
+```cpp
+// greet.cpp
+#include "greet.hpp"
+#include "concat.hpp"
+
+#include <iostream>
+
+void greet(const std::string& name) {
+    std::cout << concat("hello, ", name) << '\n';
+}
+```
+
+And then the `greet` executable will prompt for input and call through to the dynamic `greet()`
+function:
+
+```cpp
+// main.cpp
+#include "greet.hpp"
+
+#include <iostream>
+
+int main() {
+    std::string name;
+    while (std::cout << "> " && std::getline(std::cin, name) && !name.empty()) {
+        greet(name);
+    }
+}
+```
+
+But building `libconcat.so` the obvious way fails:
+
+```sh
+$ g++ -shared concat.cpp -o libconcat.so
+/usr/bin/ld.bfd: /tmp/ccCIUL4s.o: relocation R_X86_64_32 against `.rodata' can not be used when making a shared object; recompile with -fPIC
+/usr/bin/ld.bfd: failed to set dynamic section sizes: bad value
+collect2: error: ld returned 1 exit status
+```
