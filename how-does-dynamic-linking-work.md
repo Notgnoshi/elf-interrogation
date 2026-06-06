@@ -295,7 +295,8 @@ $ LD_TRACE_LOADED_OBJECTS=1 ./greet
 This isn't super helpful for troubleshooting _why_ an application can't find libraries, but it _is_
 useful for discovering the full transitive dynamic library dependency tree of an application.
 
-If we use `LD_DEBUG`, we can see the dynamic loader attempting to search multiple locations and fail:
+If we use `LD_DEBUG`, we can see the dynamic loader attempting to search multiple locations and
+fail:
 
 ```sh
 $ LD_DEBUG=libs ./greet
@@ -373,7 +374,7 @@ There's two resolutions we could pursue:
 
 As an example, let's use `RPATH`, but note that if we do so, we will no longer be able to use
 `LD_LIBRARY_PATH` to override where the dynamic loader looks for libraries. Since `RPATH` is
-deprecated in favor of `RUNPATH`, we have to pass `--diable-new-dtags` to the linker.
+deprecated in favor of `RUNPATH`, we have to pass `--disable-new-dtags` to the linker.
 
 ```sh
 $ g++ main.cpp -L. -lgreet -Wl,--disable-new-dtags,-rpath,'$ORIGIN' -o greet
@@ -399,7 +400,46 @@ hello, bob
 prefix like `/opt/foo/bin/foo.exe` with libraries located in `/opt/foo/lib/`. In this example, you'd
 set an `RPATH` of `$ORIGIN/../lib`.
 
-## ld.so.cache and ldconfig
+## /etc/ld.so.cache and ldconfig
+
+After the dynamic interpreter attempts to look up a library using `RPATH`, `LD_LIBRARY_PATH`, and
+`RUNPATH`, the next location it checks is the `ld.so.cache`. This is typically how most system
+libraries are found (searching the file system would be too slow, so we normally try to cache the
+library locations).
+
+We can see the `greet` executable finding the `libm.so.6` dependency this way:
+
+```sh
+$ LD_DEBUG=libs ./greet
+   1610731:	find library=libm.so.6 [0]; searching
+   1610731:	 search path=/home/nots/src/elf-interrogation/examples/dynamic		(RPATH from file ./greet)
+   1610731:	  trying file=/home/nots/src/elf-interrogation/examples/dynamic/libm.so.6
+   1610731:	    (no such file)
+   1610731:	 search cache=/etc/ld.so.cache
+   1610731:	  trying file=/lib64/libm.so.6
+```
+
+The `ldconfig` command builds this `/etc/ld.so.cache` file, and the `ldconfig -p` command prints it:
+
+```sh
+$ ldconfig -p | grep libm.so.6
+	libm.so.6 (libc6,x86-64) => /lib64/libm.so.6
+```
+
+This cache is _only_ updated by running `ldconfig`, and is _not_ updated as libraries are found. The
+`/etc/ld.so.cache` file is owned by root, and it'd be a security hazard to allow any application to
+update the cache of where to find libraries for other applications.
+
+`ldconfig` is almost always invoked during package post-install scriptlets, but there's also
+sometimes an `ldconfig.service` that's conditionally executed on boot for some systems.
+
+In addition to _speeding up_ library path resolution, `ldconfig` can also cache DSOs installed in
+locations _other than_ the default system library paths, making those libraries available _only_
+through the cache, and not through the path search mechanism.
+
+This is how library paths like `/usr/lib64/llvm19/lib/` get resolved - that's not a default search
+path, but (on my system) `/etc/ld.so.conf.d/llvm19-x86_64.conf` lists `/usr/lib64/llvm19/lib` as a
+library path to cache.
 
 ## ABI compatibility, SONAMEs, and versioned DSO symlinks
 
