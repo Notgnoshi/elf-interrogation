@@ -621,7 +621,38 @@ We'll dig deeper into dynamic function call resolution next.
 
 # Making a dynamic function call
 
+When `greet()` first calls `concat()`, `concat`'s address still isn't in the GOT: its `JUMP_SLOT` is
+the lazy kind, so the loader left it unresolved at startup. So then how does the call reach
+`concat`?
+
+It goes through the **Procedure Linkage Table** (PLT). The first call hits a PLT function stub that
+detours through the dynamic loader, which finds `concat`, writes its address into the GOT slot, and
+then jumps to it. Afterwards, every future call reads the filled slot and goes straight there.
+
+Let's watch this happen in GDB.
+
 ## The PLT and lazy binding
+
+Run `greet` under `gdb` and stop just before the first call to `concat`. A breakpoint on the `greet`
+function does it: `main` reads a line of input, then calls `greet()`, and the call to `concat` lives
+inside `greet()`.
+
+```sh
+$ gdb ./greet
+(gdb) break greet
+(gdb) run
+> world
+
+Breakpoint 1, 0x00007ffff7fb6632 in greet(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) () from ./libgreet.so
+(gdb) disassemble
+...
+   0x00007ffff7fb666c <+67>:	call   0x7ffff7fb62d0 <_Z6concatRKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEES6_@plt>
+...
+```
+
+The function call doesn't go to `concat`. It goes to `0x7ffff7fb62d0`, which `gdb` labels
+`concat@plt` (if you squint hard enough to mentally demangle it). This is a stub function inside
+`libgreet` (the calling library).
 
 ## LD_BIND_NOW
 
