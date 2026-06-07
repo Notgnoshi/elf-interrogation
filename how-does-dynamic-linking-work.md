@@ -300,26 +300,26 @@ fail:
 
 ```sh
 $ LD_DEBUG=libs ./greet
-   1591960:	find library=libgreet.so [0]; searching
-   1591960:	 search cache=/etc/ld.so.cache
-   1591960:	 search path=/lib64/glibc-hwcaps/x86-64-v4:/lib64/glibc-hwcaps/x86-64-v3:/lib64/glibc-hwcaps/x86-64-v2:/lib64:/usr/lib64/glibc-hwcaps/x86-64-v4:/usr/lib64/glibc-hwcaps/x86-64-v3:/usr/lib64/glibc-hwcaps/x86-64-v2:/usr/lib64(system search path)
-   1591960:	  trying file=/lib64/glibc-hwcaps/x86-64-v4/libgreet.so
-   1591960:	    (no such file)
-   1591960:	  trying file=/lib64/glibc-hwcaps/x86-64-v3/libgreet.so
-   1591960:	    (no such file)
-   1591960:	  trying file=/lib64/glibc-hwcaps/x86-64-v2/libgreet.so
-   1591960:	    (no such file)
-   1591960:	  trying file=/lib64/libgreet.so
-   1591960:	    (no such file)
-   1591960:	  trying file=/usr/lib64/glibc-hwcaps/x86-64-v4/libgreet.so
-   1591960:	    (no such file)
-   1591960:	  trying file=/usr/lib64/glibc-hwcaps/x86-64-v3/libgreet.so
-   1591960:	    (no such file)
-   1591960:	  trying file=/usr/lib64/glibc-hwcaps/x86-64-v2/libgreet.so
-   1591960:	    (no such file)
-   1591960:	  trying file=/usr/lib64/libgreet.so
-   1591960:	    (no such file)
-   1591960:	
+   1591960:     find library=libgreet.so [0]; searching
+   1591960:      search cache=/etc/ld.so.cache
+   1591960:      search path=/lib64/glibc-hwcaps/x86-64-v4:/lib64/glibc-hwcaps/x86-64-v3:/lib64/glibc-hwcaps/x86-64-v2:/lib64:/usr/lib64/glibc-hwcaps/x86-64-v4:/usr/lib64/glibc-hwcaps/x86-64-v3:/usr/lib64/glibc-hwcaps/x86-64-v2:/usr/lib64(system search path)
+   1591960:       trying file=/lib64/glibc-hwcaps/x86-64-v4/libgreet.so
+   1591960:         (no such file)
+   1591960:       trying file=/lib64/glibc-hwcaps/x86-64-v3/libgreet.so
+   1591960:         (no such file)
+   1591960:       trying file=/lib64/glibc-hwcaps/x86-64-v2/libgreet.so
+   1591960:         (no such file)
+   1591960:       trying file=/lib64/libgreet.so
+   1591960:         (no such file)
+   1591960:       trying file=/usr/lib64/glibc-hwcaps/x86-64-v4/libgreet.so
+   1591960:         (no such file)
+   1591960:       trying file=/usr/lib64/glibc-hwcaps/x86-64-v3/libgreet.so
+   1591960:         (no such file)
+   1591960:       trying file=/usr/lib64/glibc-hwcaps/x86-64-v2/libgreet.so
+   1591960:         (no such file)
+   1591960:       trying file=/usr/lib64/libgreet.so
+   1591960:         (no such file)
+   1591960:     
 ./greet: error while loading shared libraries: libgreet.so: cannot open shared object file: No such file or directory
 ```
 
@@ -354,14 +354,14 @@ find `libgreet.so` through the executable's `RUNPATH` without setting `LD_LIBRAR
 
 ```sh
 $ LD_TRACE_LOADED_OBJECTS=1 ./greet
-	linux-vdso.so.1 (0x00007f80a25fd000)
-	libgreet.so => /home/nots/src/elf-interrogation/examples/dynamic/libgreet.so (0x00007f80a25f0000)
-	libstdc++.so.6 => /lib64/libstdc++.so.6 (0x00007f80a2200000)
-	libm.so.6 => /lib64/libm.so.6 (0x00007f80a24bc000)
-	libgcc_s.so.1 => /lib64/libgcc_s.so.1 (0x00007f80a21d3000)
-	libc.so.6 => /lib64/libc.so.6 (0x00007f80a1fd8000)
-	/lib64/ld-linux-x86-64.so.2 (0x00007f80a25ff000)
-	libconcat.so => not found
+        linux-vdso.so.1 (0x00007f80a25fd000)
+        libgreet.so => /home/nots/src/elf-interrogation/examples/dynamic/libgreet.so (0x00007f80a25f0000)
+        libstdc++.so.6 => /lib64/libstdc++.so.6 (0x00007f80a2200000)
+        libm.so.6 => /lib64/libm.so.6 (0x00007f80a24bc000)
+        libgcc_s.so.1 => /lib64/libgcc_s.so.1 (0x00007f80a21d3000)
+        libc.so.6 => /lib64/libc.so.6 (0x00007f80a1fd8000)
+        /lib64/ld-linux-x86-64.so.2 (0x00007f80a25ff000)
+        libconcat.so => not found
 ```
 
 _but it still fails to find `libconcat.so`_ because it's a transitive dependency of `libgreet.so`,
@@ -411,19 +411,19 @@ We can see the `greet` executable finding the `libm.so.6` dependency this way:
 
 ```sh
 $ LD_DEBUG=libs ./greet
-   1610731:	find library=libm.so.6 [0]; searching
-   1610731:	 search path=/home/nots/src/elf-interrogation/examples/dynamic		(RPATH from file ./greet)
-   1610731:	  trying file=/home/nots/src/elf-interrogation/examples/dynamic/libm.so.6
-   1610731:	    (no such file)
-   1610731:	 search cache=/etc/ld.so.cache
-   1610731:	  trying file=/lib64/libm.so.6
+   1610731:     find library=libm.so.6 [0]; searching
+   1610731:      search path=/home/nots/src/elf-interrogation/examples/dynamic          (RPATH from file ./greet)
+   1610731:       trying file=/home/nots/src/elf-interrogation/examples/dynamic/libm.so.6
+   1610731:         (no such file)
+   1610731:      search cache=/etc/ld.so.cache
+   1610731:       trying file=/lib64/libm.so.6
 ```
 
 The `ldconfig` command builds this `/etc/ld.so.cache` file, and the `ldconfig -p` command prints it:
 
 ```sh
 $ ldconfig -p | grep libm.so.6
-	libm.so.6 (libc6,x86-64) => /lib64/libm.so.6
+        libm.so.6 (libc6,x86-64) => /lib64/libm.so.6
 ```
 
 This cache is _only_ updated by running `ldconfig`, and is _not_ updated as libraries are found. The
@@ -646,13 +646,72 @@ $ gdb ./greet
 Breakpoint 1, 0x00007ffff7fb6632 in greet(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) () from ./libgreet.so
 (gdb) disassemble
 ...
-   0x00007ffff7fb666c <+67>:	call   0x7ffff7fb62d0 <_Z6concatRKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEES6_@plt>
+   0x00007ffff7fb666c <+67>:    call   0x7ffff7fb62d0 <_Z6concatRKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEES6_@plt>
 ...
 ```
 
 The function call doesn't go to `concat`. It goes to `0x7ffff7fb62d0`, which `gdb` labels
 `concat@plt` (if you squint hard enough to mentally demangle it). This is a stub function inside
 `libgreet` (the calling library).
+
+If we take a look at that stub, we find that it's "only" three instructions:
+
+```sh
+(gdb) x/3i 0x7ffff7fb62d0
+   0x7ffff7fb62d0 <_Z6concatRKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEES6_@plt>:     jmp    QWORD PTR [rip+0x3d32]        # 0x7ffff7fba008 <_Z6concatRKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEES6_@got.plt>
+   0x7ffff7fb62d6 <_Z6concatRKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEES6_@plt+6>:   push   0x1
+   0x7ffff7fb62db <_Z6concatRKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEES6_@plt+11>:  jmp    0x7ffff7fb62b0
+```
+
+The first instruction jumps to the address stored in `concat`'s GOT slot at `0x7ffff7fba008`. Read
+that slot to see where the jump goes:
+
+```sh
+(gdb) x/a 0x7ffff7fba008
+0x7ffff7fba008 <_Z6concatRKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEES6_@got.plt>:    0x7ffff7fb62d6 <_Z6concatRKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEES6_@plt+6>
+```
+
+The dynamic loader wrote this entry to the GOT during the relocation phase. It points right back at
+the `concat@plt` stub (`concat@plt + 6`), to the `push 0x1` instruction immediately after the first
+`jmp`. `0x1` is the `concat` function's relocation index, and then we fall through to the next
+`jmp 0x7ffff7fb62b0`. That's the `0x1`th index into the `.rela.plt` table:
+
+```sh
+$ readelf -r libgreet.so | sed -n '/.rela.plt/,/^$/p' | head -n 5
+Relocation section '.rela.plt' at offset 0x2588 contains 43 entries:
+    Offset             Info             Type               Symbol's Value  Symbol's Name + Addend
+0000000000004000  0000003100000007 R_X86_64_JUMP_SLOT     00000000000008e6 _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE10_M_disposeEv + 0
+0000000000004008  0000000100000007 R_X86_64_JUMP_SLOT     0000000000000000 _Z6concatRKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEES6_ + 0
+0000000000004010  0000000200000007 R_X86_64_JUMP_SLOT     0000000000000000 _ZSt17__throw_bad_allocv@GLIBCXX_3.4 + 0
+```
+
+Which is exactly the `concat()` function's relocation. So we push the index of the relocation to the
+stack, and then jump to `0x7ffff7fb62b0` - which is the `PLT0` entry of the `.plt`, and is shared by
+every `@plt` function stub. This is how we eventually call into `_dl_runtime_resolve`, a function
+provided by `ld.so`.
+
+Disassembling `PLT0` shows that last hop:
+
+```sh
+(gdb) x/3i 0x7ffff7fb62b0
+   0x7ffff7fb62b0:      push   QWORD PTR [rip+0x3d3a]        # 0x7ffff7fb9ff0
+   0x7ffff7fb62b6:      jmp    QWORD PTR [rip+0x3d3c]        # 0x7ffff7fb9ff8
+   0x7ffff7fb62bc:      nop    DWORD PTR [rax+0x0]
+```
+
+It pushes `GOT[1]` (`0x7ffff7fb9ff0`) and jumps through `GOT[2]` (`0x7ffff7fb9ff8`). That second
+slot holds the resolver:
+
+```sh
+(gdb) x/a 0x7ffff7fb9ff8
+0x7ffff7fb9ff8: 0x7ffff7fd88a0 <_dl_runtime_resolve_xsavec>
+```
+
+`GOT[1]` and `GOT[2]` are reserved slots `ld.so` fills in at startup: `GOT[1]` is `libgreet`'s
+`link_map` (which library this is), and `GOT[2]` is the address of `_dl_runtime_resolve`. So
+`concat`'s stub pushed the relocation index, `PLT0` pushed the `link_map`, and we arrive at
+`_dl_runtime_resolve(link_map, 1)`: everything the resolver needs to look up `concat` and write its
+address into the GOT slot.
 
 ## LD_BIND_NOW
 
