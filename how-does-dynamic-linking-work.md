@@ -441,7 +441,120 @@ This is how library paths like `/usr/lib64/llvm19/lib/` get resolved - that's no
 path, but (on my system) `/etc/ld.so.conf.d/llvm19-x86_64.conf` lists `/usr/lib64/llvm19/lib` as a
 library path to cache.
 
-## ABI compatibility, SONAMEs, and versioned DSO symlinks
+## ABI compatibility
+
+The API (Application Programming Interface) is the source-code level contract of a module. The ABI
+(Application Binary Interface) is the binary-level contract of a module. It defines the symbol names
+(including C++ name mangling), calling convention, stack layout, CPU register usage, and most
+importantly, **the size, alignment, and byte offsets of fields within a type**.
+
+The two ideas are related, but separate. We can make a code change that doesn't break the API (it
+still compiles just fine) but _does_ break the ABI, meaning both the library that changed, and its
+consumers must be rebuilt after an ABI breaking change. As an example, we can add a new
+default-constructed field to a struct:
+
+```cpp
+// old
+struct Options {
+    bool reverse;
+};
+```
+
+If we pass this type into a function like so:
+
+```cpp
+std::string concat(const std::string&, const std::string&, Options);
+```
+
+and then change the struct definition:
+
+```cpp
+// new
+struct Options {
+    bool reverse;
+    char separator = ',';
+};
+```
+
+That doesn't break the API, but it _does_ break the ABI (the size and layout of the `Options` struct
+changed), so anyone using the `Options` struct across a DSO boundary must rebuild since it changed
+its layout. Otherwise we'll get silent memory corruption at runtime.
+
+## SONAMEs, and versioned DSO symlinks
+
+**ABI compatibility is of the utmost important for library maintainers to understand.** I've
+encountered far too many examples of ABI breakage that sounded innocent in the code review, but
+ended up ruining my week afterward.
+
+Dynamic libraries have a mechanism for defining an ABI version, which if used properly, can help us
+save ourselves from silent corruption at runtime but hoisting ABI compatibility into the linker
+contract at compile time. This is the `SONAME` of a library.
+
+The most common form of a `SONAME` is to suffix the library name with a number. That number is the
+ABI version, and is incremented whenever the ABI is broken. `libcrypto.so` from OpenSSL is a decent
+example of this:
+
+```sh
+$ ls -l /lib64/libcrypto.so*
+lrwxrwxrwx. 1 root root   18 Apr 19 19:00 /lib64/libcrypto.so -> libcrypto.so.3.5.5
+lrwxrwxrwx. 1 root root   18 Apr 19 19:00 /lib64/libcrypto.so.3 -> libcrypto.so.3.5.5
+-rwxr-xr-x. 1 root root 5.6M Apr 19 19:00 /lib64/libcrypto.so.3.5.5
+$ readelf --dynamic /lib64/libcrypto.so | grep SONAME
+ 0x000000000000000e (SONAME)             Library soname: [libcrypto.so.3]
+```
+
+These symlinks are commonly called "Versioned DSOs". These versions are often just the project's
+SemVer version, but that's just a convention and not a rule.
+
+The SQLite project is an interesting counterexample. <https://sqlite.org/version3.html> describes
+the rationale to include `sqlite3` in the symbol name of every symbol; it allows multiple
+ABI-incompatible versions of SQLite to exist in the same binary without symbol conflicts. That's
+unusual. Their `SONAME`s ABI version is `0` as a result of them never making a breaking ABI change,
+which is very remarkable.
+
+```sh
+$ ls -l /lib64/libsqlite*
+lrwxrwxrwx. 1 root root   20 Jan 19 18:00 /lib64/libsqlite3.so.0 -> libsqlite3.so.3.51.2
+-rwxr-xr-x. 1 root root 1.6M Jan 19 18:00 /lib64/libsqlite3.so.3.51.2
+$ readelf --dynamic /lib64/libsqlite3.so.0 | grep SONAME
+ 0x000000000000000e (SONAME)             Library soname: [libsqlite3.so.0]
+```
+
+The SQLite maintainers have shown much more ABI compatibility discipline than is normal in my
+experience. ABI compatibility can be confusing, and as such it's often unintentionally broken.
+
+We can build our `libgreet.so.1` and `libconcat.so.1` DSOs with a custom SONAME like so:
+
+```sh
+$ g++ -fPIC -shared concat.cpp -Wl,-soname,libconcat.so.1 -o libconcat.so.1.0.0
+$ ln -sf libconcat.so.1.0.0 libconcat.so.1
+$ ln -sf libconcat.so.1 libconcat.so
+$ g++ -fPIC -shared greet.cpp -L. -lconcat -Wl,-soname,libgreet.so.1 -o libgreet.so.1.0.0
+$ ln -sf libgreet.so.1.0.0 libgreet.so.1
+$ ln -sf libgreet.so.1 libgreet.so
+$ g++ main.cpp -L. -lgreet -Wl,--disable-new-dtags,-rpath,'$ORIGIN' -o greet
+```
+
+Notice that we also made symbolic links from `libgreet.so -> libgreet.so.1 -> libgreet.so.1.0.0`.
+This is **very** common. It allows the maintainer of `libgreet.so.1` to produce a bugfix version
+`libgreet.so.1.0.1` in such a way that consumers are never aware. It can also allow multiple
+versions of the same library to coexist. The `libgreet.so` name is only ever used at build time, and
+when it's used, the compiler sees the `SONAME` of `libgreet.so.1`, and uses that in the `greet`
+executable's `NEEDED` dependency list:
+
+```sh
+$ readelf --dynamic greet | grep NEEDED
+ 0x0000000000000001 (NEEDED)             Shared library: [libgreet.so.1]
+ 0x0000000000000001 (NEEDED)             Shared library: [libstdc++.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libm.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libgcc_s.so.1]
+ 0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]
+```
+
+Typically package maintainers produce these symlinks in their packaging scripts, and they're shipped
+in the package, but it's also possible to produce (some of) these symlinks with `ldconfig -n`,
+although this is unusual, and it only includes the `SONAME -> DSO` symlink, not an unversioned
+symlink.
 
 # Relocations and the GOT
 
