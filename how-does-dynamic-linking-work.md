@@ -558,6 +558,67 @@ symlink.
 
 # Relocations and the GOT
 
+After the dynamic loader finishes finding and loading the libraries `NEEDED` by an application, it
+applies any **relocations** from those libraries.
+
+We saw relocations once already, back in `concat.o`: blanks the linker fills in once it knows where
+things live. At runtime with dynamic libraries we have to do the same thing, except now it's the
+dynamic loader filling the blanks at runtime, after every library has been given an address.
+
+Because of ASLR, each library lands at a different address every run, so none of those addresses can
+be baked in ahead of time. And a shared library's code is mapped into read-only memory, to enable
+sharing a single copy across every process using it. So the loader can't patch addresses straight
+into the library code without losing that sharing (and without undoing the position independence we
+worked for earlier).
+
+As is usually the case in software engineering, we can solve this problem by adding a level of
+indirection: the **Global Offset Table**. The GOT is a table of pointers that lives in the library's
+_writable_ data. The code never names an external address directly; it reads the address out of a
+GOT slot instead. At load time the loader fills each slot with a resolved address. The code itself
+is never touched, so it stays read-only and shareable; only the small table differs from one process
+to the next.
+
+The clearest example in our program is `std::cout`. The `greet()` function writes to it:
+
+```cpp
+std::cout << concat("hello, ", name) << '\n';
+```
+
+`std::cout` is a single global object defined inside `libstdc++`, so its address isn't known until
+that library is loaded. `libgreet` records a relocation asking the loader to fill in a GOT slot once
+it is loaded:
+
+```sh
+$ readelf -rC libgreet.so | grep cout
+0000000000003fc8  0000000c00000006 R_X86_64_GLOB_DAT      0000000000000000 std::cout@GLIBCXX_3.4 + 0
+```
+
+When read as an instruction to the loader `R_X86_64_GLOB_DAT` means: "store the address of
+`std::cout` at GOT offset `0x3fc8`." The offset points into the `.got` ELF section, which is nothing
+more than an array of 8-byte pointers:
+
+```sh
+$ readelf -S libgreet.so | grep '\.got '
+  [22] .got              PROGBITS        0000000000003fc0 003fc0 000028 08  WA  0   0  8
+```
+
+So when `greet()` runs, it loads a pointer out of slot `0x3fc8` and uses it, and because the loader
+filled that slot at startup, the pointer is the real, randomized runtime address of `std::cout`.
+This is done at startup, before `main()` is invoked, and before any static constructors are
+executed.
+
+If we look at relocations for the `concat(const std::string&, const std::string&)` symbol, we see a
+`R_X86_64_JUMP_SLOT`, which is still a GOT relocation, but instead of being eagerly relocated at
+startup, it's resolution is deferred to the first time the `concat()` function is called. This is
+the default lazy-binding behavior of dynamic function calls.
+
+```sh
+$ readelf --wide -rC libgreet.so | grep -w concat
+0000000000004008  0000000100000007 R_X86_64_JUMP_SLOT     0000000000000000 concat(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0
+```
+
+We'll dig deeper into dynamic function call resolution next.
+
 # Making a dynamic function call
 
 ## The PLT and lazy binding
